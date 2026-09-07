@@ -1,0 +1,5 @@
+openai>=1.0
+httpx
+chess>=1.10
+numpy
+trafilatura
