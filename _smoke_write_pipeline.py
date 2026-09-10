@@ -177,5 +177,6 @@ check("err 为空（放行给 handler）", err == "", err)
 check("没调 chat 起草", len(llm.chat_calls) == before_chat)
 check("text 没被填", "text" not in a)
 
+shutil.rmtree(TEST, ignore_errors=True)
 print(f"\n{'[冒烟通过]' if all(PASS) else '[有失败]'} 分段约束 {sum(PASS)}/{len(PASS)} 通过")
 sys.exit(0 if all(PASS) else 1)

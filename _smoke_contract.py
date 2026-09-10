@@ -130,6 +130,7 @@ err = agent._compose_write({"action": "revise_memory", "done": False,
                             "id": oid, "title": "再改一次名"}, [])
 check("只填 title → 不进起草", err == "", err)
 
+shutil.rmtree(TEST, ignore_errors=True)
 print()
 if FAILS:
     print(f"[冒烟失败] {len(FAILS)} 项：{FAILS}")

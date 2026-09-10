@@ -63,10 +63,13 @@ TOOL_GUIDES = {
     "rename_tag": "rename_tag(old_title=那条 L1 的完整 tag 写法含括号, new_title=新主标签名)："
                   "old_title 必须含括号（用 list_tags 看准确写法），示例："
                   "rename_tag(old_title=边界感（自我认知）, new_title=边界感)。默认只预览，带 dry_run=false 才真改。",
-    "revise_memory": "revise_memory(id, text?, note?)：id 填要改写的那条记忆 id（list_memory/search_memory 查）。"
-                     "text 可以不填——没填时放开约束，由我按这层标准 + 原内容直接改写（note 写清我想怎么改）；"
-                     "我填了就直接用我的。示例：revise_memory(id=V01-003, note=把前提补进条件里，更精炼)。"
-                     "它只换内容不改标签（改标签用 retag），旧版会自动归档 L5。",
+    "revise_memory": "revise_memory(id, text?, title?, parent?, note?)：id 填要改的那条记忆 id"
+                     "（list_memory/search_memory 查）。一次只改一类：改正文就自己把 text 写全；"
+                     "或只填 note、不填 title/parent，让系统按这层标准 + 原内容起草正文。"
+                     "只想补名字/补归属就填 title（主标签）/ parent（L3 归属的 L1 主标签名）——"
+                     "**填了 title/parent 就不再代起草正文，正文原样不动**。示例："
+                     "revise_memory(id=V01-003, note=把前提补进条件里，更精炼)。"
+                     "L1/L2 换三维大类用 reclassify；旧版自动归档 L5。",
     "merge_memory": "merge_memory(layer, targets, text?, note?)：targets=要合并的记忆 id，逗号隔开，"
                     "如 merge_memory(L3, 1a2b3c,4d5e6f)。合并后的正文可以不填——没填时放开约束，由我按"
                     "这层标准 + 各目标原文直接写（note 写清想怎么归并）；我填了就直接用我的。",
@@ -298,7 +301,7 @@ class Toolbox:
                                                          (a.get("title") or "").strip(),
                                                          (a.get("pyramid") or "").strip(), a), "organize",
                              (("layer",), ("targets",))),
-            "revise_memory": t("revise_memory(id, text?, title?, parent?, note?)：按 id 改一条记忆——换正文 / 补主标签 / 改归属（id、印证次数、引用它的记忆全保留，旧版归档 L5）。text 可不填：没填时放开约束，由我按这层的记忆标准 + 原内容直接改写（note 里写清我想怎么改）；我填了就直接用我的。只想给一条没名字的记忆补名字/补归属，就只填 title 或 parent，正文不用重写（L3 的 parent 填归属的 L1 主标签名，L1/L2 填三维大类）。",
+            "revise_memory": t("revise_memory(id, text?, title?, parent?, note?)：按 id 改一条记忆——换正文 / 补主标签 / 改归属（id、印证次数、引用它的记忆全保留，旧版归档 L5）。一次只改一类：① 改正文——自己把 text 写全，或只填 note、不填 title/parent，由系统按这层记忆标准 + 原内容起草；② 改标签——L3 填 parent（归属的 L1 主标签名，会重挂并给新方向印证 +1），补/改名字填 title（L1/L2 换三维大类用 reclassify，不是 parent）。**填了 title/parent 就不会再代起草正文，正文原样不动**——想同时改正文又想改标签，正文必须自己写进 text。",
                                self._h_revise_memory, "revise",
                                (("id",), ("text", "title", "parent"))),
             "trace_memory": t("trace_memory(id)：记忆回溯——来源 / 改过几次 / 它印证的 L1 / 印证它的 L3。id 用 list_memory 或 search_memory 查。",
@@ -336,7 +339,7 @@ class Toolbox:
             "find_text": t("find_text(text)：搜记忆正文里手写的引用（≥4 字）——比如旧 id 或旧标签名被写进了正文。系统字段改号自动换算，正文手写的靠它找。",
                           lambda a: self.agent.memory.find_text(self._text(a)),
                           "tool", (("text",),)),
-            "reflect": t("reflect(text?, type?, status?, id?)：元认知自省。text 可不填——没填时放开约束，由我按自省标准 + 最近的经历直接写（note 里写清想理清什么 / 触发点是什么）；我填了就直接用我的。不带 id=新写；带 id=给旧记录流转状态（resolved/abandoned/open，备注短，自己写）。type 自由起。",
+            "reflect": t("reflect(text?, type?, status?, id?)：元认知自省。text 可不填——没填时放开约束，由我按自省标准 + 最近的经历直接写（note 里写清想理清什么 / 触发点是什么）；我填了就直接用我的。不带 id=新写；带 id=给旧记录流转状态（resolved/abandoned/open，备注短，自己写）——id 是 8 位十六进制（如 a3c27b1f），只能从 reflect 返回的「还没想通的」里复制，别拿 tick 号或自造名字，对不上时报错会列出当前可流转的 id。type 自由起。",
                         self._h_reflect, "tool", ()),
             "read_decisions": t("read_decisions()：读决策日志（选择记录），按标签分组，供提炼价值观。",
                                lambda a: self.read_decisions()),
@@ -1335,7 +1338,8 @@ class Toolbox:
             valid = status in ("open", "resolved", "abandoned")
             ok = self.agent.memory.update_meta_log_status(item_id, status, (text or "").strip())
             if not ok:
-                raise ToolError(f"没找到自省记录 {item_id}（id 看上次 reflect 返回的同类历史）")
+                raise ToolError(f"没找到自省记录 {item_id}。"
+                                + self.agent.memory.open_meta_log_hint())
             if not valid:
                 return "（没改状态：status 要填 open/resolved/abandoned，只追加了备注）"
             return f"已把自省 {item_id} 标为 {status}"

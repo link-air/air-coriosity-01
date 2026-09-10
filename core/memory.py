@@ -2024,6 +2024,36 @@ class Memory:
         self._archive_entry("meta_log", text[:300], type_ or "meta_log", item_id=item_id)
         return item_id
 
+    def match_meta_log(self, item_id: str):
+        """按 id 找一条自省记录（容错解析），找不到或前缀有歧义都返回 None。
+
+        她拿到的 id 常带抄写噪声：从返回的「[a3c27b1f]」里连方括号一起抄、或多打空格。
+        这里统一去掉首尾空白与方括号再做精确匹配；精确不中时退一步做**唯一前缀**匹配
+        （抄了半截也能对上）。前缀撞上多条按找不到处理——宁可让她重挑，也不猜她指哪条。
+        （2026-09-11：她反复用 tick 号 / 自造名当 id，见 data/mailbox/outbox 与 meta_log a1289800。）
+        """
+        q = (item_id or "").strip().strip("[]").strip()
+        if not q:
+            return None
+        for it in self.meta_log:
+            if it.get("id") == q:
+                return it
+        hits = [it for it in self.meta_log if (it.get("id") or "").startswith(q)]
+        return hits[0] if len(hits) == 1 else None
+
+    def open_meta_log_hint(self, limit: int = 5) -> str:
+        """reflect 流转失败时给的候选提示：列出最近可流转（open）的自省 id + 摘要，让她当场挑对。
+
+        id 是 8 位十六进制，只在 reflect 返回里出现一次——跨 tick 忘了就没入口，这正是
+        她自造 id 的根因。失败时报错连同候选一起回灌，比让她 read_code 翻实现省一轮。
+        """
+        opens = [it for it in self.meta_log if it.get("status") == "open"]
+        if not opens:
+            return "当前没有 open 状态的自省记录（id 只能从 reflect 返回的「还没想通的」里拿，不能自己编）。"
+        lines = [f"- [{it.get('id')}] {(it.get('text') or '')[:40]}" for it in opens[-limit:]]
+        return ("id 是 8 位十六进制，只能从 reflect 返回的「还没想通的」里复制，不能自己编。"
+                "当前可流转（open）的自省：\n" + "\n".join(lines))
+
     def update_meta_log_status(self, item_id: str, status: str, note: str = "") -> bool:
         """状态流转：把一条自省记录 open → resolved / abandoned（或反向）。
 
@@ -2031,19 +2061,18 @@ class Memory:
         status 不传或非法 → **保持原状态不动**（追加备注和出队是两件事，别用默认行为混起来，
         否则 reflect(id=X) 只想补句备注却被静默标成 resolved，从队列里消失）。
         实现「标 resolved」——更新同一条记录的 status，并刷新 updated 时间。
+        id 容错见 match_meta_log（她能抄成 [a3c27b1f] 或只抄半截）。
         """
-        item_id = (item_id or "").strip()
-        valid = status in ("open", "resolved", "abandoned")
-        for it in self.meta_log:
-            if it.get("id") == item_id:
-                if valid:
-                    it["status"] = status
-                it["updated"] = self._now()
-                if note:
-                    it["text"] = (it.get("text", "") + f"｜{note}")[:500]
-                self.save()
-                return True
-        return False
+        it = self.match_meta_log(item_id)
+        if it is None:
+            return False
+        if status in ("open", "resolved", "abandoned"):
+            it["status"] = status
+        it["updated"] = self._now()
+        if note:
+            it["text"] = (it.get("text", "") + f"｜{note}")[:500]
+        self.save()
+        return True
 
     def _trim_meta_log(self):
         """元认知记录容量：超过 meta_log_cap 时，最旧的滚进 L5 冷存（不真删）。

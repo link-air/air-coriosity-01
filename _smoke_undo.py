@@ -118,6 +118,7 @@ mem2.write("L2", "草稿丙，重启之后再写一条", category="value", tag="
 id_c = mem2.l2[-1]["id"]
 check("重启后水位线还在，号不回退", id_c not in (id_a, id_b), f"{id_b} → {id_c}")
 
+shutil.rmtree(TEST, ignore_errors=True)
 print()
 if FAILS:
     print(f"[冒烟失败] {len(FAILS)} 项：{FAILS}")
