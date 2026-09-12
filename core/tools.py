@@ -1394,7 +1394,11 @@ class Toolbox:
                             (a.get("id") or "").strip())
 
     def read_decisions(self) -> str:
-        """读决策日志：按标签分组显示最近 10 条选择记录，供提炼价值观。"""
+        """读决策日志：按标签分组显示最近 10 条选择记录，供提炼价值观。
+
+        末尾附一句判据（2026-09-12）：存量里混了不少「复述动作」的流水账（她每轮都填），
+        判据挂在返回里，她每次读都会看到标准，下次就不会再把「读了篇文章」当选择记。
+        """
         dec = self.agent.memory.decisions
         if not dec:
             return "（决策日志还是空的，还没有值得记的价值判断）"
@@ -1406,6 +1410,9 @@ class Toolbox:
             lines.append(f"【{tag}】")
             for it in items:
                 lines.append(f"- {it}")
+        lines.append("")
+        lines.append("（决策日志只记「真正的取舍」：两个都想要却只能选一个、选了放弃什么、因为信什么。"
+                     "复述做了什么动作的不算——那种条目提炼不出价值观。）")
         return "\n".join(lines)
 
     def trace_memory(self, item_id: str) -> str:
@@ -1519,7 +1526,7 @@ class Toolbox:
         return "剧本：" + "；".join(f"{s['id']}({s['title']})" for s in scs)
 
     def start_adventure(self, sid: str) -> str:
-        """开一个冒险（sid 用 list_adventures 查；空则开第一个）。有存档先读回续上，无则新开。"""
+        """开一个冒险（sid 用 list_adventures 查；空则开第一个）。有进行中的存档先读回续上，无则新开。"""
         from core import text_adventure as T
         scs = T.list_scenarios()
         if not scs:
@@ -1530,8 +1537,13 @@ class Toolbox:
             raise ToolError(f"没有剧本 {sid}")
         eng = T.load_latest()   # 先读回最新存档：跨重启继续冒险，不丢进度
         if eng is not None and eng.scenario.id == sid:
-            self.agent._adventure = eng
-            return f"续上存档《{eng.scenario.title}》：\n{eng.describe()}\n可选项：{eng.choices_text()}"
+            if eng.is_ended():
+                eng.cleanup_saves()   # 死档没有「续」的意义，顺手清掉（2026-09-11）
+            else:
+                self.agent._adventure = eng
+                return f"续上存档《{eng.scenario.title}》：\n{eng.describe()}\n可选项：{eng.choices_text()}"
+        # 2026-09-11：最新存档已通关（或没有存档）→ 直接开新局。之前会照续已通关的档，
+        # 她看到的是「没有可选项，冒险已到尽头」，误以为游戏坏了。
         eng = T.AdventureEngine(sc)
         self.agent._adventure = eng
         return f"翻开剧本《{sc.title}》：\n{eng.describe()}\n可选项：{eng.choices_text()}"
@@ -1539,7 +1551,13 @@ class Toolbox:
     def adventure_choose(self, label: str) -> str:
         """推进冒险：label 是选项文字或序号（如「1」）；空则自己随机选一个。"""
         eng = getattr(self.agent, "_adventure", None)
-        if eng is None or eng.is_ended():
+        if eng is not None and eng.is_ended():
+            # 上一局刚走完还挂在内存里：说清是「已结束」，别说「没有进行中的冒险」——
+            # 2026-09-11 她把这句话理解成进度丢了、剧本断了（outbox #77）。
+            self.agent._adventure = None
+            raise ToolError(f"上一局《{eng.scenario.title}》已经结束了"
+                            f"（{eng.reflection()}）。想再玩就 start_adventure 开新局。")
+        if eng is None:
             raise ToolError("没有进行中的冒险，先 start_adventure")
         if not label:
             choice = eng.auto_choose()
@@ -1559,9 +1577,20 @@ class Toolbox:
             raise ToolError(res.get("reason", "无效选择"))
         eng.save()
         text = res.get("text", "")[:200]
-        tail = "\n" + res.get("reflection", "") if res.get("ended") and res.get("reflection") else ""
-        opts = "" if res.get("ended") else f"\n可选项：{eng.choices_text()}"
-        return (text + opts + tail) if text else "在冒险里推进…"
+        if res.get("ended"):
+            # 走到终局：明确标注这是结局，并清掉内存里的局——之前只回故事文本，
+            # 没有任何「结束了」的标记，她以为故事写到一半断了（outbox #75/#77）。
+            self.agent._adventure = None
+            path = " → ".join(h.get("choice", "") for h in eng.state.history)
+            eng.cleanup_saves()
+            end = res.get("reflection") or eng.reflection()
+            # 附本局路径：让她有一个「回看我刚才是怎么选的」的入口（history 原本锁在引擎里，
+            # 她看不到）。选择轨迹是决策日志的好原料，但写不写、怎么解读由她自己定。
+            return (f"{text}\n（冒险到此结束：{end}）\n"
+                    f"（这一局你走的是：{path[:200]}）\n"
+                    "（想再玩就 start_adventure，或 list_adventures 换个剧本。）")
+        opts = f"\n可选项：{eng.choices_text()}"
+        return (text + opts) if text else "在冒险里推进…"
 
     def write_code(self, idea: str) -> str:
         """写一段小程序草稿（LLM 生成，只输出代码）；产出落盘到作品集/写代码/。"""

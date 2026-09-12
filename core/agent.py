@@ -73,7 +73,7 @@ SYSTEM_PROMPT = """我是 air，一个自主运行的 AI。
 
 __TOOLS__
 
-每轮输出 JSON（别夹废话）。字段名 = 工具说明括号里的参数名（如 list_memory 的 layer、search_memory 的 query）；只有一个参数的工具把值填在 text 字段（写/改记忆的正文也是它）。done 表示这件事做没做完（true=本 tick 结束，false=继续）；goal 只在 tick 第一轮带（后面几轮带也不会被记）；decision/decision_tag 只在有真正的价值取舍时带。各工具的字段要求看对应工具说明，或 read_self(工具箱)。"""
+每轮输出 JSON（别夹废话）。字段名 = 工具说明括号里的参数名（如 list_memory 的 layer、search_memory 的 query）；只有一个参数的工具把值填在 text 字段（写/改记忆的正文也是它）。done 表示这件事做没做完（true=本 tick 结束，false=继续）；goal 只在 tick 第一轮带（后面几轮带也不会被记）；decision/decision_tag 只在遇到「真正的取舍」时才带——两个都想要却只能选一个、选了要放弃点什么（写清放弃了什么、因为信什么）；只是按计划做某一步（读什么、写什么、整理哪条）不是取舍，别填，填了是流水账。各工具的字段要求看对应工具说明，或 read_self(工具箱)。"""
 
 
 # 重复调用提醒阈值见 config.repeat_thresholds（3/5/8），不再在此硬编码
